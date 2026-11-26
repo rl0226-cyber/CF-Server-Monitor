@@ -16,7 +16,7 @@
     "test:agent-config": "node test/agent-config.js",
     "test:history-query": "node --test test/history-query.test.js",
     "preview": "vite preview",
-    "test:status-history": "node --test test/status-history.test.js"
+    "test:status-history": "node --test test/status-history.test.js test/status-history-schema-lifecycle.test.js"
   },
   "keywords": [
     "cloudflare",

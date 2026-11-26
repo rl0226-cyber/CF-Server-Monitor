@@ -497,6 +497,7 @@ export default {
       if (day === 0 && hour === 0 && minute < 5) {
         debug('[Cron] 每周日0:00-0:05表轮换期间，跳过离线节点检测');
       } else {
+        await initDatabase(env.DB);
         // 两项检测共用本轮设置，避免偶数分钟再次强制刷新。
         const siteSettings = await loadSiteSettings(env.DB, {
           forceRefresh: !!env.METRICS_BROADCASTER && minute % 2 === 0

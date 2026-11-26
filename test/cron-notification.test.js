@@ -34,6 +34,7 @@ function makeDb(settings, servers = [makeServer(1)]) {
   const db = {
     stats, settings, servers,
     schemaQueries: 0,
+    initializing: false,
     timestamps: new Map(servers.map(server => [server.id, NOW])),
     statusRows: new Map(),
     offlineState: {}, resourceState: null, failHistory: false, failSettings: false, failLegacy: false,
@@ -47,8 +48,12 @@ function makeDb(settings, servers = [makeServer(1)]) {
         args: [],
         bind(...args) { this.args = args; return this; },
         async first() {
+          if (sql.includes('sqlite_master')) {
+            db.initializing = true;
+            return null;
+          }
           if (sql.includes("key = 'site_options'")) {
-            stats.settings++;
+            if (!db.initializing) stats.settings++;
             if (db.failSettings) throw new Error('simulated settings read failure');
             return { value: JSON.stringify(db.settings) };
           }
@@ -71,7 +76,17 @@ function makeDb(settings, servers = [makeServer(1)]) {
           return { results: [] };
         },
         async run() {
-          if (sql.includes('server_status_history')) return { success: true, meta: { changes: 0 } };
+          if (sql.includes('server_status_history')) {
+            if (sql.includes('idx_server_status_history_server_time')) db.initializing = false;
+            return { success: true, meta: { changes: 0 } };
+          }
+          if (sql.trimStart().startsWith('CREATE TABLE') || sql.trimStart().startsWith('CREATE INDEX')) {
+            if (sql.includes('idx_server_status_history_server_time')) db.initializing = false;
+            return { success: true, meta: { changes: 0 } };
+          }
+          if (sql.includes('INSERT INTO settings') && this.args[0] === 'site_options') {
+            return { success: true, meta: { changes: 1 } };
+          }
           stats.writes++;
           if (sql.startsWith('DELETE')) {
             assert.equal(this.args[0], 'resource_alert_state');
@@ -171,7 +186,7 @@ test('minute cron shares one settings read, preserves refresh cadence and record
   const { env, calls, storage } = makeEnv(db);
   await worker.scheduled({ cron: '*/1 * * * *' }, env, {});
   assert.deepEqual(db.stats, { settings: 1, legacy: 0, servers: 1, history: 2, batches: 1, offline: 1, resource: 1, writes: 0 });
-  assert.equal(db.schemaQueries, 2, 'status table and index are ensured once instead of twice per cron');
+  assert.equal(db.schemaQueries, 2, 'initDatabase creates the status table and index before polling');
   assert.equal(db.statusRows.get('server-1').status, 1);
   assert.equal(db.statusRows.get('server-2').status, 1, 'status history is independent of offline-alert opt-outs');
   assert.equal(calls.length, 1);
@@ -186,6 +201,7 @@ test('minute cron shares one settings read, preserves refresh cadence and record
   db.timestamps.set('server-1', Date.now());
   await worker.scheduled({ cron: '*/1 * * * *' }, env, {});
   assert.equal(db.stats.settings, 2, 'next even minute refreshes once');
+  assert.equal(db.schemaQueries, 2, 'later cron runs reuse the initialized schema without repeating DDL');
   assert.equal(calls.length, 3);
   assert.equal(db.stats.writes, 0);
   assert.equal(messages.length, 0);
