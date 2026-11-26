@@ -501,14 +501,16 @@ export default {
         const siteSettings = await loadSiteSettings(env.DB, {
           forceRefresh: !!env.METRICS_BROADCASTER && minute % 2 === 0
         });
+        let latestTimestampsMap;
         try {
           const statusHistory = await checkAndRecordServerStatusHistory(env.DB);
           if (!statusHistory.success) debug('[Cron] 跳过状态历史记录:', statusHistory.reason);
+          else latestTimestampsMap = statusHistory.latestTimestampsMap;
         } catch (e) {
           console.error('[Cron] 状态历史记录失败:', e);
         }
         debug('[Cron] 开始执行离线节点检测');
-        await checkOfflineNodes(env.DB, { siteSettings });
+        await checkOfflineNodes(env.DB, { siteSettings, latestTimestampsMap });
         debug('[Cron] 离线节点检测完成');
         debug('[Cron] 开始执行资源负载告警检测');
         await checkResourceAlerts(env, { siteSettings });
