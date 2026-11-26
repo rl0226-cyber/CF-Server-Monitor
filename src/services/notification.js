@@ -1061,7 +1061,9 @@ export async function checkOfflineNodes(db, options = {}) {
     const servers = (await getAllServers(db)).filter(server => server.offline_notify_disabled !== '1');
     if (servers.length === 0) return;
 
-    const latestTimestampsMap = await getLatestTimestampsForAllServers(db, { servers });
+    const latestTimestampsMap = options.latestTimestampsMap !== undefined
+      ? options.latestTimestampsMap
+      : await getLatestTimestampsForAllServers(db, { servers });
     if (!latestTimestampsMap) {
       // 获取失败时跳过本次检测，避免把所有服务器误判为离线
       debug('[Cron] 获取最新上报时间戳失败，跳过本次离线检测');

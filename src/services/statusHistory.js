@@ -1,6 +1,5 @@
 import { getLatestTimestampsForAllServers } from '../database/schema.js';
 import {
-  ensureStatusHistoryTable,
   getServerStatusHistory,
   pruneServerStatusHistory,
   recordServerStatusTransitions
@@ -9,7 +8,6 @@ import { getAllServers } from '../utils/cache.js';
 
 export async function checkAndRecordServerStatusHistory(db, options = {}) {
   const now = Number.isFinite(options.now) ? options.now : Date.now();
-  await ensureStatusHistoryTable(db);
 
   const servers = await getAllServers(db, true);
   if (!servers.length) return { success: true, recorded: 0 };
@@ -20,7 +18,7 @@ export async function checkAndRecordServerStatusHistory(db, options = {}) {
   }
 
   const recorded = await recordServerStatusTransitions(db, servers, latestTimestamps, now);
-  return { success: true, recorded };
+  return { success: true, recorded, latestTimestampsMap: latestTimestamps };
 }
 
 export async function fetchServerStatusHistory(db, serverIds, options = {}) {
