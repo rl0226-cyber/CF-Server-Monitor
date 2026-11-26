@@ -3,6 +3,7 @@ export const STATUS_HISTORY_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 const WRITE_BATCH_SIZE = 50;
 const QUERY_ID_CHUNK_SIZE = 40;
 
+// Schema lifecycle is owned by initDatabase; data helpers below assume the table exists.
 export async function ensureStatusHistoryTable(db) {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS server_status_history (
@@ -26,7 +27,6 @@ export async function ensureStatusHistoryTable(db) {
  * concurrent cron invocations do not create duplicate same-state records.
  */
 export async function recordServerStatusTransitions(db, servers, latestTimestamps, now = Date.now(), thresholdMs = 5 * 60 * 1000) {
-  await ensureStatusHistoryTable(db);
   if (!Array.isArray(servers) || servers.length === 0) return 0;
 
   const changedAt = Math.floor(now / 1000);
@@ -65,7 +65,6 @@ export async function recordServerStatusTransitions(db, servers, latestTimestamp
  * without retaining an unbounded transition log.
  */
 export async function pruneServerStatusHistory(db, now = Date.now()) {
-  await ensureStatusHistoryTable(db);
   const cutoff = Math.floor(now / 1000) - STATUS_HISTORY_WINDOW_SECONDS;
   const result = await db.prepare(`
     DELETE FROM server_status_history
@@ -85,7 +84,6 @@ export async function pruneServerStatusHistory(db, now = Date.now()) {
  * window for the requested, already-authorized server IDs.
  */
 export async function getServerStatusHistory(db, serverIds, now = Date.now()) {
-  await ensureStatusHistoryTable(db);
   const ids = [...new Set((Array.isArray(serverIds) ? serverIds : []).map((id) => String(id || '')).filter(Boolean))];
   const windowStart = Math.floor(now / 1000) - STATUS_HISTORY_WINDOW_SECONDS;
   const records = [];

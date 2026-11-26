@@ -3,6 +3,7 @@ import test from 'node:test';
 import { Miniflare } from 'miniflare';
 
 import {
+  ensureStatusHistoryTable,
   getServerStatusHistory,
   pruneServerStatusHistory,
   recordServerStatusTransitions
@@ -17,6 +18,7 @@ async function withDatabase(run) {
 
   try {
     const db = await miniflare.getD1Database('DB');
+    await ensureStatusHistoryTable(db);
     await run(db);
   } finally {
     await miniflare.dispose();
