@@ -33,10 +33,15 @@ function makeDb(settings, servers = [makeServer(1)]) {
   const stats = { settings: 0, legacy: 0, servers: 0, history: 0, batches: 0, offline: 0, resource: 0, writes: 0 };
   const db = {
     stats, settings, servers,
+    schemaQueries: 0,
     timestamps: new Map(servers.map(server => [server.id, NOW])),
     statusRows: new Map(),
     offlineState: {}, resourceState: null, failHistory: false, failSettings: false, failLegacy: false,
     prepare(sql) {
+      if (sql.includes('CREATE TABLE IF NOT EXISTS server_status_history')
+        || sql.includes('CREATE INDEX IF NOT EXISTS idx_server_status_history_server_time')) {
+        db.schemaQueries++;
+      }
       return {
         sql,
         args: [],
@@ -165,7 +170,8 @@ test('minute cron shares one settings read, preserves refresh cadence and record
   const db = makeDb(makeSettings(), [makeServer(1), makeServer(2, { offline_notify_disabled: '1' })]);
   const { env, calls, storage } = makeEnv(db);
   await worker.scheduled({ cron: '*/1 * * * *' }, env, {});
-  assert.deepEqual(db.stats, { settings: 1, legacy: 0, servers: 1, history: 3, batches: 2, offline: 1, resource: 1, writes: 0 });
+  assert.deepEqual(db.stats, { settings: 1, legacy: 0, servers: 1, history: 2, batches: 1, offline: 1, resource: 1, writes: 0 });
+  assert.equal(db.schemaQueries, 2, 'status table and index are ensured once instead of twice per cron');
   assert.equal(db.statusRows.get('server-1').status, 1);
   assert.equal(db.statusRows.get('server-2').status, 1, 'status history is independent of offline-alert opt-outs');
   assert.equal(calls.length, 1);
@@ -326,6 +332,22 @@ test('offline queries exclude disabled nodes and preserve trigger/recovery dedup
   await checkOfflineNodes(db, { siteSettings: settings });
   assert.equal(db.stats.writes, 1);
   assert.equal(messages.length, 2);
+});
+
+test('offline check reuses a supplied timestamp snapshot without querying metrics history again', async t => {
+  const messages = setup(t);
+  const settings = makeSettings();
+  const db = makeDb(settings, [makeServer(1), makeServer(2, { offline_notify_disabled: '1' })]);
+
+  await checkOfflineNodes(db, {
+    siteSettings: settings,
+    latestTimestampsMap: new Map([['server-1', NOW]])
+  });
+
+  assert.equal(db.stats.history, 0);
+  assert.equal(db.stats.batches, 0);
+  assert.deepEqual(db.offlineState, {});
+  assert.equal(messages.length, 0);
 });
 
 test('offline check does no history/state work when every node is disabled and skips D1 failures', async t => {
